@@ -1,39 +1,46 @@
-def call(Map args) {
+def call(Map config) {
 
-    def tag = args.tag ?: 'latest'
-    def image = args.image
-    def paths = args.manifest_paths ?: []
+    def manifestPaths = config.manifest_paths
+    def imageName = config.image
+    def imageTag = config.tag
 
-    echo "Updating K8s manifests with image: ${image}:${tag}"
+    echo "Updating K8s manifests with image: ${imageName}:${imageTag}"
 
-    for (file in paths) {
-
+    manifestPaths.each { file ->
         echo "Processing: ${file}"
+        if (fileExists(file)) {
+
+            // This sed works on Ubuntu & Alpine both
+            sh """
+                sed -i -E 's|(image:).*|\\1 ${imageName}:${imageTag}|' ${file}
+            """
+
+            echo "Updated image in ${file}"
+        } else {
+            error "Manifest file not found: ${file}"
+        }
+    }
+
+    // Push updated YAMLs back to GitHub
+    withCredentials([string(credentialsId: 'github-token', variable: 'GIT_PASS')]) {
 
         sh """
-            if [ -f ${file} ]; then
-              echo "Updating image in ${file}"
-              sed -i -E "s|^(\\s*image:\\s*).*\$|\\1${image}:${tag}|" ${file}
-            else
-              echo "Manifest not found: ${file}"
-              exit 1
-            fi
-        """
+            echo "Cleaning workspace to avoid conflicts..."
+            git reset --hard
 
-        sh """
-            git add ${file}
-            git commit -m "ci: update image to ${image}:${tag} in ${file}" || true
+            echo "Pulling latest from main..."
+            git pull origin main || true
+
+            echo "Adding updated files..."
+            git add k8s/
+
+            echo "Committing changes..."
+            git commit -m "ci: update image to ${imageName}:${imageTag}" || echo "No changes to commit"
+
+            echo "Pushing changes to GitHub..."
+            git push https://anish-kumar-001:${GIT_PASS}@github.com/anish-kumar-001/complete-devsecops-ecosystem.git main
         """
     }
 
-    withCredentials([usernamePassword(
-        credentialsId: 'repo-creds',
-        usernameVariable: 'GIT_USER',
-        passwordVariable: 'GIT_PASS'
-    )]) {
-        sh """
-            git pull --rebase
-            git push https://${GIT_USER}:${GIT_PASS}@github.com/anish-kumar-001/complete-devsecops-ecosystem.git HEAD:main
-        """
-    }
+    echo "Update complete."
 }
