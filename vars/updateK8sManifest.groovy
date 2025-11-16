@@ -1,46 +1,40 @@
-def call(Map config) {
+def call(String image) {
 
-    def manifestPaths = config.manifest_paths
-    def imageName = config.image
-    def imageTag = config.tag
+    echo "Updating K8s manifests with image: ${image}"
 
-    echo "Updating K8s manifests with image: ${imageName}:${imageTag}"
+    def filePath = "k8s/frontend-deployment.yaml"
 
-    manifestPaths.each { file ->
-        echo "Processing: ${file}"
-        if (fileExists(file)) {
+    echo "Processing: ${filePath}"
 
-            // This sed works on Ubuntu & Alpine both
-            sh """
-                sed -i -E 's|(image:).*|\\1 ${imageName}:${imageTag}|' ${file}
-            """
-
-            echo "Updated image in ${file}"
-        } else {
-            error "Manifest file not found: ${file}"
-        }
+    if (!fileExists(filePath)) {
+        error "File NOT found: ${filePath}"
     }
 
-    // Push updated YAMLs back to GitHub
-    withCredentials([string(credentialsId: 'github-token', variable: 'GIT_PASS')]) {
+    // Update image line safely
+    sh """
+    sed -i -E 's|(image:).*|\\1 ${image}|g' ${filePath}
+    """
 
+    echo "Updated image in ${filePath}"
+
+    // Configure git identity
+    sh """
+    git config user.email "jenkins@ci.com"
+    git config user.name "Jenkins CI"
+    """
+
+    // Add & commit changes
+    sh """
+    git add ${filePath}
+    git commit -m "ci: update image to ${image} in ${filePath}"
+    """
+
+    // Push directly (NO REBASE)
+    withCredentials([usernamePassword(credentialsId: 'repo-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
         sh """
-            echo "Cleaning workspace to avoid conflicts..."
-            git reset --hard
-
-            echo "Pulling latest from main..."
-            git pull origin main || true
-
-            echo "Adding updated files..."
-            git add k8s/
-
-            echo "Committing changes..."
-            git commit -m "ci: update image to ${imageName}:${imageTag}" || echo "No changes to commit"
-
-            echo "Pushing changes to GitHub..."
-            git push https://anish-kumar-001:${GIT_PASS}@github.com/anish-kumar-001/complete-devsecops-ecosystem.git main
+        git push https://${GIT_USER}:${GIT_PASS}@github.com/anish-kumar-001/complete-devsecops-ecosystem.git HEAD:main
         """
     }
 
-    echo "Update complete."
+    echo "Manifest update + push completed successfully."
 }
