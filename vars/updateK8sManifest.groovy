@@ -1,40 +1,44 @@
-def call(String image) {
+def call(Map args) {
 
-    echo "Updating K8s manifests with image: ${image}"
+    def image = args.image
+    def tag = args.tag ?: "latest"
+    def files = args.manifest_paths ?: []
 
-    def filePath = "k8s/frontend-deployment.yaml"
+    echo "Updating K8s manifests: ${files} -> ${image}:${tag}"
 
-    echo "Processing: ${filePath}"
+    files.each { file ->
 
-    if (!fileExists(filePath)) {
-        error "File NOT found: ${filePath}"
-    }
+        echo "Updating ${file}"
 
-    // Update image line safely
-    sh """
-    sed -i -E 's|(image:).*|\\1 ${image}|g' ${filePath}
-    """
-
-    echo "Updated image in ${filePath}"
-
-    // Configure git identity
-    sh """
-    git config user.email "jenkins@ci.com"
-    git config user.name "Jenkins CI"
-    """
-
-    // Add & commit changes
-    sh """
-    git add ${filePath}
-    git commit -m "ci: update image to ${image} in ${filePath}"
-    """
-
-    // Push directly (NO REBASE)
-    withCredentials([usernamePassword(credentialsId: 'repo-creds', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
         sh """
-        git push https://${GIT_USER}:${GIT_PASS}@github.com/anish-kumar-001/complete-devsecops-ecosystem.git HEAD:main
+            if [ ! -f "${file}" ]; then
+              echo "ERROR: File ${file} not found!"
+              exit 1
+            fi
+        """
+
+        sh """
+            sed -i -E "s#(image:).*#\\1 ${image}:${tag}#" ${file}
         """
     }
 
-    echo "Manifest update + push completed successfully."
+    sh """
+        git config user.email "jenkins@local"
+        git config user.name "Jenkins CI"
+
+        git add ${files.join(' ')} || true
+        git commit -m "ci: update image -> ${image}:${tag}" || true
+    """
+
+    withCredentials([usernamePassword(
+        credentialsId: 'repo-creds',
+        usernameVariable: 'GIT_USER',
+        passwordVariable: 'GIT_PASS'
+    )]) {
+        sh """
+            git pull --no-rebase || true
+            git push https://${GIT_USER}:${GIT_PASS}@github.com/anish-kumar-001/complete-devsecops-ecosystem.git HEAD:main
+        """
+    }
 }
+
