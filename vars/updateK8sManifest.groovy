@@ -6,6 +6,9 @@ def call(Map config) {
         passwordVariable: 'GIT_PASS'
     )]) {
 
+        // Always ensure branch exists locally
+        sh "git checkout -B main"
+
         config.manifest_paths.each { filePath ->
             if (fileExists(filePath)) {
                 echo "Updating image in ${filePath}"
@@ -21,18 +24,15 @@ def call(Map config) {
             git config user.name "Anish CI"
         '''
 
-        // commit only if there is a change
+        // commit but do not fail if nothing to commit
         sh "git commit -m 'ci: update image -> ${config.image}:${config.tag}' || true"
 
-        // safe pull
-        sh '''
-            git pull --rebase origin main || true
-        '''
+        // safe rebase pull
+        sh "git pull --rebase origin main || true"
 
-        // SAFE push (no Groovy interpolation issues)
+        // safe push
         sh '''
             git push https://${GIT_USER}:${GIT_PASS}@github.com/anish-kumar-001/complete-devsecops-ecosystem.git main
         '''
     }
 }
-
