@@ -1,7 +1,7 @@
 def call(Map config) {
 
     withCredentials([usernamePassword(
-        credentialsId: 'git-credentials',
+        credentialsId: 'repo-creds',
         usernameVariable: 'GIT_USER',
         passwordVariable: 'GIT_PASS'
     )]) {
@@ -21,14 +21,15 @@ def call(Map config) {
             git config user.name "Anish CI"
         '''
 
+        // commit only if there is a change
         sh "git commit -m 'ci: update image -> ${config.image}:${config.tag}' || true"
 
-        // SAFE pull
+        // safe pull
         sh '''
             git pull --rebase origin main || true
         '''
 
-        // SAFE push (no Groovy interpolation)
+        // SAFE push (no Groovy interpolation issues)
         sh '''
             git push https://${GIT_USER}:${GIT_PASS}@github.com/anish-kumar-001/complete-devsecops-ecosystem.git main
         '''
